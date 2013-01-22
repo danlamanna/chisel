@@ -1,0 +1,26 @@
+#!/usr/bin/env python
+
+from optparse import OptionParser
+from fabric.operations import local
+from chisel.config.config import _get_config_object, _save_config_object
+import time
+
+opt_parser = OptionParser()
+opt_parser.add_option("--source",  dest="source", help="Source database (master).")
+opt_parser.add_option("--dest",    dest="dest", help="Dest database (slave).")
+opt_parser.add_option("--search",  dest="search")
+opt_parser.add_option("--replace", dest="replace")
+
+(options, args) = opt_parser.parse_args()
+
+config = _get_config_object()
+
+if 'replacements' not in config:
+    config['replacements'] = {}
+
+config['replacements'][time.time()] = { "source":  options.source,
+                                        "dest":    options.dest,
+                                        "search":  options.search,
+                                        "replace": options.replace }
+
+_save_config_object(config)

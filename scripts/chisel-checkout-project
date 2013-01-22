@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+
+from optparse import OptionParser
+from fabric.operations import local
+
+opt_parser = OptionParser()
+opt_parser.add_option("-u", "--url", dest="url", help="URL of git or svn repository.")
+opt_parser.add_option("-g", "--git-svn", dest="git_svn", action="store_true")
+
+(options, args) = opt_parser.parse_args()
+
+if options.url.endswith(".git"):
+    local("git clone %s ." % options.url)
+elif options.git_svn:
+    local("git svn clone --stdlayout %s ." % options.url)
+else:
+    local("svn checkout %s ." % options.url)

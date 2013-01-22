@@ -1,0 +1,105 @@
+#!/usr/bin/env python
+
+from optparse import OptionParser
+from fabric.operations import local
+from fabric.context_managers import lcd
+
+from chisel.config.config import _get_config_object, _save_config_object, CHISEL_CONFIG_TEMP_DIR
+import sys,re,glob
+
+from os import listdir
+from os.path import isfile, join, abspath
+
+opt_parser = OptionParser()
+opt_parser.add_option("-t", "--to", dest="to", help="DB to pull into.")
+opt_parser.add_option("-o", "--optimized", dest="optimized", action="store_true", help="Uses --opt and dumps database using --tab, then imports using mysqlimport.")
+
+(options, args) = opt_parser.parse_args()
+
+config = _get_config_object()
+
+db = options.to
+
+if options.to not in config['databases']:
+    print "database to not found."
+    sys.exit()
+
+if not config['databases'][db]['parent']:
+    print "Database has no parent"
+    sys.exit()
+
+if config['databases'][db]['parent'] not in config['databases']:
+    print "parent not found."
+    sys.exit()
+
+source = config['databases'][config['databases'][db]['parent']]
+dest   = config['databases'][db]
+
+print "exporting source."
+if options.optimized:
+    # exports raw data as quick as possible
+    local("mysqldump -u%(u)s -p%(p)s %(db)s -h%(h)s --compact --skip-triggers --no-create-info --opt -T %(tmp)s" % {
+            "u":  source['user'],
+            "p":  re.escape(source['password']),
+            "db": source['name'],
+            "h":  source['host'],
+            "tmp": CHISEL_CONFIG_TEMP_DIR})
+
+    # exports raw schema
+    local("mysqldump -u%(u)s -p%(p)s %(db)s -h%(h)s --no-data --opt > %(tmp)s/schema.sql" % {
+            "u":  source['user'],
+            "p":  re.escape(source['password']),
+            "db": source['name'],
+            "h":  source['host'],
+            "tmp": CHISEL_CONFIG_TEMP_DIR})
+else:
+    local("mysqldump -u%(u)s -p%(p)s %(db)s -h%(h)s > %(tmp)s/db.sql" % {
+            "u":  source['user'],
+            "p":  re.escape(source['password']),
+            "db": source['name'],
+            "h":  source['host'],
+            "tmp": CHISEL_CONFIG_TEMP_DIR})
+
+print "performing replacements."
+
+try:
+    for k,v in config['replacements'].iteritems():
+        if v['dest'] == db and v['source'] == config['databases'][db]['parent']:
+            local("sed -i 's/%(search)s/%(replace)s/g' temp.chisel.sql" % {
+                    "search": v['search'],
+                    "replace": v['replace'] })
+except KeyError:
+    pass
+
+print "importing into dest."
+
+if options.optimized:
+    # import raw schema
+    local("mysql -u%(u)s -p%(p)s %(db)s -h%(h)s < %(file)s" % {
+            "u":  dest['user'],
+            "p":  re.escape(dest['password']),
+            "db": dest['name'],
+            "h":  dest['host'],
+            "file": CHISEL_CONFIG_TEMP_DIR + '/schema.sql'})
+
+    table_files = [ f for f in listdir(CHISEL_CONFIG_TEMP_DIR) if isfile(join(CHISEL_CONFIG_TEMP_DIR,f)) and f.endswith('.txt') ]
+
+    table_files = [ abspath(CHISEL_CONFIG_TEMP_DIR + '/' + f) for f in table_files ]
+
+    # import table_files
+    local("mysqlimport -u%(u)s -p%(p)s %(db)s -h%(h)s %(files)s" % {
+            "u":  dest['user'],
+            "p":  re.escape(dest['password']),
+            "db": dest['name'],
+            "h":  dest['host'],
+            "files": " ".join(table_files)})
+else:
+    local("mysql -u%(u)s -p%(p)s %(db)s -h%(h)s < %(file)s" % {
+            "u":  dest['user'],
+            "p":  re.escape(dest['password']),
+            "db": dest['name'],
+            "h":  dest['host'],
+            "file": CHISEL_CONFIG_TEMP_DIR + '/db.sql'})
+
+print "cleaning up."
+local("rm -f %s/*" % CHISEL_CONFIG_TEMP_DIR)

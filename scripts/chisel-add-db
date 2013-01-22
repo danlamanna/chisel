@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+from optparse import OptionParser
+from fabric.operations import local
+
+from chisel.config.config import _get_config_object, _save_config_object
+
+opt_parser = OptionParser()
+opt_parser.add_option("-s", "--slug", dest="slug", help="A unique identifier for the database.")
+opt_parser.add_option("-d", "--default", dest="default", action="store_true", help="Make it the default local database for pulling.")
+opt_parser.add_option("-u", "--user", dest="user", help="DB Username.")
+opt_parser.add_option("-p", "--password", dest="password", help="DB Password.")
+opt_parser.add_option("-n", "--name", dest="name", help="DB Name.")
+opt_parser.add_option("--host", dest="host", help="DB Host.")
+opt_parser.add_option("--parent", dest="parent", help="Parent DB to pull from.")
+
+(options, args) = opt_parser.parse_args()
+
+config = _get_config_object()
+
+if 'databases' not in config:
+    config['databases'] = {}
+
+try:
+    parent = options.parent
+except KeyError:
+    parent = ""
+
+config['databases'][options.slug] = { "default": 1 if options.default is True else 0,
+                                      "user": options.user,
+                                      "password": options.password,
+                                      "name": options.name,
+                                      "host": options.host,
+                                      "parent": parent }
+
+_save_config_object(config)
